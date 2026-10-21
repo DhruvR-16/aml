@@ -1,0 +1,30 @@
+seed: 42
+data:
+  name: UJIIndoorLoc
+  split_file: data/splits/folds.json
+  group: USERID
+features:
+  representation: linear_positive
+  missing_rssi_dbm: -110
+  include_engineered: true
+  include_missingness: true
+  scaling_fit_scope: training_fold_only
+  compare_variance_threshold: [none, 0.0]
+models:
+  random_forest:
+    n_estimators: 300
+    max_features: sqrt
+    min_samples_leaf: 1
+    class_weight: balanced_subsample
+  xgboost:
+    n_estimators: 250
+    max_depth: 6
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    reg_lambda: 1.0
+    tree_method: hist
+metrics:
+  - accuracy
+  - macro_f1
+  - floor_accuracy_given_correct_building

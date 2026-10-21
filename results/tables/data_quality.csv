@@ -1,6 +1,0 @@
-Issue,Count,Action
-Duplicate training rows,637,Drop later copies
-Train-constant WAP columns,55,Drop from both splits
-"Observed readings in [-5, 0] dBm",224,"Flag only; USERIDs=[6, 14]"
-Clean training scans,19300,Inner CV only
-Official test scans,1111,Final numbers only
