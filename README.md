@@ -31,7 +31,7 @@ The loader removes duplicate training rows only, detects constant WAP columns fr
 - `src/features/transform.py`: fold-safe feature building.
 - `data/splits/folds.json`: reproducible fold indices and quality metadata; raw data itself is ignored.
 - `results/tables/`: data-quality, grouped kNN representation, PCA variance, and variance-filter outputs produced by the report scripts.
-- `docs/theory_phase1.md`, `docs/data_quality.md`: theory and report-ready quality table.
+- `docs/theory_phase1.md`, `docs/data_quality.md`: methodology notes and data-quality summary.
 
 Run `python scripts/run_knn_baselines.py` for the five-fold representation comparison and `python scripts/report_feature_reduction.py` for PCA/variance-filter reports. Both operate on USERID-held-out training folds; neither uses the official test set. The baseline metrics are in `results/tables/knn_representation_summary.csv`, with per-fold metrics alongside it. `results/tables/pca_explained_variance.csv` reports fold-0 cumulative explained variance, and `variance_threshold_counts.csv` reports zero-variance selection. Member 2's fold-fitted selector is used in Member 3's RF/XGBoost comparisons; see the Member 3 results section below.
 
@@ -48,7 +48,7 @@ python scripts/train_classifiers.py
 python scripts/summarize_classifier_effects.py
 ```
 
-Fixed-setting baseline results are in `classifier_grouped_cv_summary.csv`. Nested USERID tuning, selected parameters, and OOF predictions are in `classifier_tuned_grouped_cv_summary.csv`, `classifier_tuned_selected_hyperparameters.json`, and `classifiers_tuned_grouped_cv.csv`. Generate tuned OOF confusion matrices with `python scripts/plot_classifier_confusion_matrices.py --predictions classifiers_tuned_grouped_cv.csv --output-prefix classifier_tuned`. XGBoost gain and Random Forest impurity importance are model-specific and should not be compared by absolute scale.
+Fixed-setting baseline results are in `results/tables/classifier_grouped_cv_summary.csv`. Nested USERID tuning, selected parameters, and OOF predictions are in `results/tables/classifier_tuned_grouped_cv_summary.csv`, `results/tables/classifier_tuned_selected_hyperparameters.json`, and `results/preds/classifiers_tuned_grouped_cv.csv`. Generate tuned OOF confusion matrices with `python scripts/plot_classifier_confusion_matrices.py --predictions results/preds/classifiers_tuned_grouped_cv.csv --output-prefix results/figures/classifier_tuned`. XGBoost gain and Random Forest impurity importance are model-specific and should not be compared by absolute scale.
 
 ## Member 4 — Phase 1 coordinate regression and validation
 
@@ -71,11 +71,7 @@ Run the shared evaluator and comparison-table generator:
 python scripts/build_results_table.py
 ```
 
-It reads every CSV in `results/preds/`, writes pooled grouped-CV and official-test metrics to `results/tables/phase1_comparison.csv`, and preserves fold-level rows in `results/tables/phase1_results_by_fold.csv`. Metrics include building/floor accuracy, conditional floor accuracy, coordinate MAE and error quantiles, hierarchical breakdown, and the guide's EvAAL-style score. Unit tests are in `tests/test_evaluation_metrics.py`. M5's survey notes are in `docs/phase1_literature_review.md`.
+It reads every CSV in `results/preds/`, writes pooled grouped-CV and official-test metrics to `results/tables/phase1_comparison.csv`, and preserves fold-level rows in `results/tables/phase1_results_by_fold.csv`. Metrics include building/floor accuracy, conditional floor accuracy, coordinate MAE and error quantiles, hierarchical breakdown, and the guide's EvAAL-style score. Unit tests are in `tests/test_evaluation_metrics.py`.
 
-The corrected grouped-CV findings are drafted in `docs/phase1_results_draft.md`. The IEEE report, contribution appendix, and slides still need real member names, member-specific paper summaries, and team review. Do not label the earlier official-test baseline as the frozen tuned result. The evaluator refuses to overwrite existing official-test outputs; this project's saved test outputs predate the corrected nested tuning.
-
-## Rubric execution plan
-
-The phase-by-phase rubric map, validation gates, owners, and outstanding work are in [`docs/phase1_phase2_high_marks_plan.md`](docs/phase1_phase2_high_marks_plan.md).
+The evaluator preserves the saved official-test outputs and does not rerun them after tuning. The saved test results therefore represent the earlier fixed-setting baseline; use grouped-CV results to compare tuned models.
 

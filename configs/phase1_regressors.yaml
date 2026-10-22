@@ -1,0 +1,55 @@
+seed: 42
+data:
+  name: UJIIndoorLoc
+  split_file: data/splits/folds.json
+  classifier_preds: results/preds/classifiers_grouped_cv.csv
+  official_test: data/raw/validationData.csv
+  group: USERID
+
+features:
+  representation: linear_positive
+  missing_rssi_dbm: -110
+  include_engineered: true
+  include_missingness: true
+  variance_threshold: 0.0
+  scaling_fit_scope: training_fold_only
+
+routing:
+  strategies:
+    - global
+    - per_building
+    - per_building_floor
+  hierarchical_modes:
+    - oracle
+    - end_to_end
+  min_samples_per_group: 10
+
+models:
+  knn:
+    inner_cv_splits: 3
+    param_grid:
+      n_neighbors: [3, 5, 7, 9, 11, 15]
+      weights: ["distance", "uniform"]
+      p: [1, 2] # 1: Manhattan, 2: Euclidean
+  random_forest:
+    inner_cv_splits: 3
+    param_grid:
+      n_estimators: [100, 200]
+      max_features: ["sqrt", 0.3]
+      min_samples_leaf: [1, 2]
+  xgboost:
+    inner_cv_splits: 3
+    param_grid:
+      n_estimators: [100, 200]
+      max_depth: [4, 6]
+      learning_rate: [0.05, 0.1]
+      subsample: [0.8]
+      colsample_bytree: [0.8]
+
+metrics:
+  - mae_longitude
+  - mae_latitude
+  - mean_error
+  - median_error
+  - p75_error
+  - p95_error

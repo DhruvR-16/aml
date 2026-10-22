@@ -1,0 +1,6 @@
+fold,train_rows,valid_rows,train_users,valid_users,user_overlap_count,valid_indices_unique
+0,14784,4516,17,1,0,True
+1,15685,3615,15,3,0,True
+2,15680,3620,14,4,0,True
+3,15537,3763,13,5,0,True
+4,15514,3786,13,5,0,True
