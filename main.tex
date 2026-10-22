@@ -1,0 +1,153 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{url}
+\usepackage{cite}
+\usepackage{balance}
+\graphicspath{{figures/}}
+\title{Indoor Positioning via Signal Strength Features: A Phase 1 Machine Learning Baseline}
+\author{\IEEEauthorblockN{Kavya Jain, Naman Jain, Dhruv, Lakshya Agrawal, Akhilesh}
+\IEEEauthorblockA{Project 9 -- Applied Machine Learning}}
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Indoor Wi-Fi fingerprinting estimates a device's location from the received signal strengths of nearby access points. This Phase 1 study establishes a reproducible machine-learning baseline on UJIIndoorLoc for building and floor classification and coordinate regression. We removed 637 duplicate training scans, excluded 55 access-point columns constant in training, retained and flagged 224 unusually strong readings, and evaluated five user-disjoint folds. Missing access points were represented consistently, and feature transformations and coordinate scaling were fit within training folds. Nested USERID-grouped tuning compared Random Forest and XGBoost classifiers; k-nearest-neighbor, Random Forest, and XGBoost regressors were evaluated with global, per-building, and per-building-floor routing. Pooled out-of-fold results show 99.34\% building accuracy for tuned Random Forest and 77.10\% floor accuracy for tuned XGBoost. A kNN per-building route achieved 12.21 m mean position error, 7.52 m median error, and 37.11 m at the 95th percentile. A task-wise RF-building/XGBoost-floor route improved floor classification over RF/RF, but its per-building-floor kNN route had higher mean position error (13.57 m versus 12.80 m). The official test set had already been evaluated with earlier fixed settings, so it is not used to select or claim performance for these tuned models.
+\end{abstract}
+\begin{IEEEkeywords}
+indoor localization, Wi-Fi fingerprinting, UJIIndoorLoc, grouped cross-validation, Random Forest, XGBoost, k-nearest neighbors
+\end{IEEEkeywords}
+
+\section{Introduction}
+Global Navigation Satellite Systems provide limited coverage indoors. Wi-Fi fingerprinting instead maps a scan of received signal strength indicators (RSSI) to a previously observed location. The UJIIndoorLoc benchmark contains scans from multiple buildings and floors, making the task hierarchical: a system must recognize the building and floor as well as estimate two-dimensional coordinates \cite{uci,xia2017,liu2020}.
+
+This Phase 1 work builds a machine-learning baseline with a shared data and evaluation pipeline. It compares engineered RSSI representations, tree-based classifiers, and coordinate regressors. The validation design groups by user so scans from one person do not appear in both training and validation for an outer fold. This is intended to estimate performance on unseen users more realistically than a random scan split.
+
+\section{Related Work}
+Wi-Fi fingerprinting is commonly treated as a pattern-recognition problem: a measured signal vector is compared with reference fingerprints or mapped to a location by a learned model. Reviews describe distance-based methods such as kNN alongside probabilistic and machine-learning methods, and identify sparsity, device variation, and environmental change as persistent challenges \cite{xia2017,liu2020,shang2022}. Deep-learning surveys motivate shared representations for localization tasks, but the present study evaluates classical models only; multitask learning is reserved for the next project phase \cite{feng2022}.
+
+\section{Dataset and Quality Analysis}
+UJIIndoorLoc provides 19,937 training scans and 1,111 separately collected official validation scans, with 520 access-point measurements per scan and building, floor, coordinate, user, and phone metadata \cite{uci}. The official validation file is treated as a held-out test set. Phase 1 model selection uses only the training file and saved USERID-grouped folds.
+
+\begin{table}[t]
+\caption{Training data quality checks}
+\label{tab:quality}
+\centering
+\footnotesize
+\begin{tabular}{lr}
+\toprule
+Check & Result \\
+\midrule
+Exact duplicate training scans removed & 637 \\
+WAPs constant in cleaned training data & 55 \\
+Scans remaining for grouped CV & 19,300 \\
+Unusual observed RSSI in $[-5,0]$ dBm & 224 \\
+Official held-out scans & 1,111 \\
+USERID overlap in each outer fold & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The 224 unusually strong values were flagged and retained rather than silently changed. Constant WAP columns were identified from training data and removed from both partitions. The five saved GroupKFold splits have no USERID overlap, and each cleaned training scan is used for validation once. The official data also has fewer detected APs per scan on average than training; this shift is descriptive and was not used for tuning (Fig.~\ref{fig:shift}).
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{eda_train_test_shift.png}
+\caption{Train and official-test RSSI and detected-AP shift. The test data is descriptive only for Phase 1 model selection.}
+\label{fig:shift}
+\end{figure}
+
+\section{Features and Models}
+\subsection{RSSI representation}
+The raw dataset uses +100 to encode a WAP that was not detected. This value is not a physical RSSI, so the pipeline maps absence to $-110$ dBm, below the observed signal range, and preserves detection information where the representation includes missingness indicators. Candidate views include linear-positive, exponential, and powered RSSI transforms. Engineered features summarize detected AP count, strongest readings, and missingness pattern. PCA and variance filtering are evaluated using parameters fit on training folds only. These choices follow common fingerprinting practice while keeping non-detection distinct from a weak observed signal \cite{xia2017,shang2022}.
+
+\subsection{Classification}
+Random Forest and XGBoost predict BUILDINGID and FLOOR. Their nonlinear tree ensembles can model interactions among access-point readings. Nested tuning selects parameters on inner USERID-grouped splits; outer held-out users produce out-of-fold predictions. Macro-F1 is considered alongside accuracy because floor support is imbalanced. The best task-wise route combines the tuned RF building classifier with tuned XGBoost floor classifier.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{confusion_xgboost_tuned_variance_filtered_floor.png}
+\caption{Pooled out-of-fold floor confusion matrix for tuned XGBoost. Floor 4 is the least-supported class.}
+\label{fig:floorcm}
+\end{figure}
+
+\subsection{Coordinate regression and routing}
+Coordinate models predict LONGITUDE and LATITUDE in metres. We compare kNN, Random Forest, and XGBoost with global, per-building, and per-building-floor routes. Target scaling is fit using the training partition of each fold and predictions are converted back to metres before scoring. End-to-end routes use out-of-fold M3 predictions; oracle routes using true labels are diagnostics only. The primary regression comparison uses nested tuned preprocessing and tuned RF routes. A second route substitutes XGBoost for floor prediction without retuning the regressors.
+
+\section{Experimental Setup}
+All models use the same five outer GroupKFold splits grouped by USERID. Feature transforms, variance selectors, and coordinate target scalers are fit on the relevant training portion only. Classifier tuning uses nested grouped validation and macro-F1 selection. Regressor tuning uses inner grouped validation and compares coordinate error. We report pooled out-of-fold metrics across the 19,300 training scans. The official test file was evaluated earlier using fixed settings; therefore, its saved numbers are not treated as validation of the tuned pipeline.
+
+Metrics include building accuracy, overall floor accuracy, floor accuracy conditional on a correct building, per-axis coordinate MAE, Euclidean position-error mean/median/95th percentile, hierarchical error breakdown, and an optional EvAAL-style penalized score with 50 m and 4 m penalties for building and floor errors.
+
+\section{Results}
+\subsection{Classification}
+Table~\ref{tab:class} shows that building recognition is substantially easier than floor recognition. Tuned RF achieves 99.34\% pooled building accuracy. Tuned XGBoost gives the highest pooled floor accuracy at 77.10\%; its outer-fold mean macro-F1 is 0.743. Floor 4 has only 727 out-of-fold scans. Its recall is 9.2\% for RF and 23.9\% for XGBoost, so overall accuracy alone hides a difficult minority class (Fig.~\ref{fig:floorcm}).
+
+\begin{table}[t]
+\caption{Tuned classifier pooled out-of-fold results}
+\label{tab:class}
+\centering
+\footnotesize
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lrrr}
+\toprule
+Classifier & Building (\%) & Floor (\%) & Floor | building correct (\%) \\
+\midrule
+RF / RF & 99.34 & 74.75 & 74.98 \\
+XGBoost / XGBoost & 96.87 & 77.10 & 78.71 \\
+RF / XGBoost & 99.34 & 77.10 & 77.52 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsection{Coordinate localization}
+Table~\ref{tab:reg} gives the best kNN routes. Per-building kNN has the lowest mean position error in the primary RF/RF route (12.21 m). Per-building-floor routing gives 12.80 m. Substituting XGBoost for the floor classifier improves classification accuracy but the corresponding floor-routed kNN result is 13.57 m. Better floor accuracy therefore did not translate into lower coordinate error in this experiment. The global kNN route has 21.01 m mean error, showing the benefit of separating building spaces.
+
+\begin{table}[t]
+\caption{kNN pooled out-of-fold localization results}
+\label{tab:reg}
+\centering
+\footnotesize
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{llrrrr}
+\toprule
+M3 route & M4 route & Mean (m) & Median (m) & P95 (m) & Score (m) \\
+\midrule
+RF/RF & Global & 21.01 & 8.85 & 92.47 & 22.35 \\
+RF/RF & Per-building & \textbf{12.21} & 7.52 & 37.11 & 13.55 \\
+RF/RF & Per-building-floor & 12.80 & 7.65 & 41.63 & 14.14 \\
+RF/XGB & Per-building-floor & 13.57 & 7.65 & 46.97 & 14.82 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{regressor_routing_comparison_tuned.png}
+\caption{Oracle and end-to-end routing comparison using grouped-CV regressors.}
+\label{fig:routing}
+\end{figure}
+
+\section{Discussion}
+The results establish a reproducible Phase 1 baseline and expose the main weakness: floor predictions, especially the least-supported floor, remain less reliable than building predictions. The analysis also shows why classification and localization scores should be examined together. Changing the floor classifier can improve label accuracy without improving the coordinate route, because an incorrect floor can send a scan to a different specialized regressor and the coordinate models are trained on different partitions.
+
+The user-grouped design and fold-local fitting reduce leakage risk, but the study has limits. The five outer folds are the main evidence for tuned models; the prior official-test run used fixed settings and has already consumed the test set for this project. The current results should therefore not be described as a fresh tuned-model test evaluation. The analysis does not yet include multiple random seeds, paired confidence intervals, calibration testing, or a worst-case error review. Those are additional validation and Phase 2 tasks.
+
+\section{Conclusion}
+This Phase 1 implementation provides data-quality evidence, fold-safe feature processing, nested grouped classification and regression comparisons, and a shared evaluation table. RF is the strongest building classifier in the reported comparison, XGBoost gives the strongest floor accuracy, and kNN with per-building routing gives the lowest pooled mean coordinate error. These results form the classical baseline for Phase 2, where a shared multitask network and a justified hybrid can be evaluated on the same grouped splits.
+
+\section*{Contribution Summary}
+\footnotesize\noindent\textbf{Contributions:} M1 -- data and EDA; M2 -- features and representation; M3 -- classification; M4 -- regression and routing; M5 -- evaluation and report integration.
+
+\balance
+\begin{thebibliography}{00}
+\bibitem{uci} UCI Machine Learning Repository, \textquotedblleft UJIIndoorLoc,\textquotedblright{} DOI: 10.24432/C5MS59. [Online]. Available: \url{https://doi.org/10.24432/C5MS59}
+\bibitem{xia2017} S. Xia, Y. Liu, G. Yuan, M. Zhu, and Z. Wang, \textquotedblleft Indoor fingerprint positioning based on Wi-Fi: An overview,\textquotedblright{} \emph{ISPRS International Journal of Geo-Information}, vol. 6, no. 5, p. 135, 2017, doi: 10.3390/ijgi6050135.
+\bibitem{liu2020} F. Liu et al., \textquotedblleft Survey on WiFi-based indoor positioning techniques,\textquotedblright{} \emph{IET Communications}, vol. 14, no. 9, pp. 1372--1383, 2020, doi: 10.1049/iet-com.2019.1059.
+\bibitem{shang2022} S. Shang and L. Wang, \textquotedblleft Overview of WiFi fingerprinting-based indoor positioning,\textquotedblright{} \emph{IET Communications}, vol. 16, no. 7, pp. 725--733, 2022, doi: 10.1049/cmu2.12386.
+\bibitem{feng2022} X. Feng, K. A. Nguyen, and Z. Luo, \textquotedblleft A survey of deep learning approaches for WiFi-based indoor positioning,\textquotedblright{} \emph{Journal of Information and Telecommunication}, vol. 6, no. 2, pp. 163--216, 2022, doi: 10.1080/24751839.2021.1975425.
+\end{thebibliography}
+\end{document}
