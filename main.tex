@@ -5,8 +5,8 @@
 \usepackage{url}
 \usepackage{cite}
 \usepackage{balance}
-\graphicspath{{figures/}}
-\title{Indoor Positioning via Signal Strength Features: A Phase 1 Machine Learning Baseline}
+\graphicspath{{phase1/figures/}{results/figures/}}
+\title{Indoor Wi-Fi Localization: A Phase 1 Machine Learning Baseline}
 \author{\IEEEauthorblockN{Kavya Jain, Naman Jain, Dhruv, Lakshya Agrawal, Akhilesh}
 \IEEEauthorblockA{Project 9 -- Applied Machine Learning}}
 \begin{document}
@@ -27,40 +27,67 @@ This Phase 1 work builds a machine-learning baseline with a shared data and eval
 \section{Related Work}
 Wi-Fi fingerprinting is commonly treated as a pattern-recognition problem: a measured signal vector is compared with reference fingerprints or mapped to a location by a learned model. Reviews describe distance-based methods such as kNN alongside probabilistic and machine-learning methods, and identify sparsity, device variation, and environmental change as persistent challenges \cite{xia2017,liu2020,shang2022}. Deep-learning surveys motivate shared representations for localization tasks, but the present study evaluates classical models only; multitask learning is reserved for the next project phase \cite{feng2022}.
 
-\section{Dataset and Quality Analysis}
-UJIIndoorLoc provides 19,937 training scans and 1,111 separately collected official validation scans, with 520 access-point measurements per scan and building, floor, coordinate, user, and phone metadata \cite{uci}. The official validation file is treated as a held-out test set. Phase 1 model selection uses only the training file and saved USERID-grouped folds.
+\section{Dataset, EDA, and Quality Analysis}
+UJIIndoorLoc contains 19,937 training scans and 1,111 separately collected official validation scans (21,048 scans in total). Each source row has 529 columns: 520 WAP signal measurements, four targets (BUILDINGID, FLOOR, LONGITUDE, LATITUDE), and five metadata fields (SPACEID, RELATIVEPOSITION, USERID, PHONEID, TIMESTAMP) \cite{uci}. The data covers three buildings and 13 building--floor combinations. The official validation file is treated as a held-out test set; model selection uses the training file and saved USERID-grouped folds only. The two source files total approximately 43 MB.
+
+EDA was conducted on the signal matrix and on relevant target and metadata fields, rather than on metadata alone. We checked the distribution of detected AP counts and observed RSSI, class support by building and floor, scan counts by USERID and PHONEID, coordinate maps, and train-to-test signal summaries. Fig.~\ref{fig:eda} shows the main exploration plots. B2 contributes the largest building-level sample count and is the only building with floor 4; floor support is therefore not uniform. The coordinate map shows spatial clusters associated with buildings and overlapping horizontal positions across floors, which motivates evaluating both floor labels and coordinates. USERID scan counts are strongly uneven (192 to 4,516 scans); PHONEID 14 contributes 4,827 scans across three users. This repeated-user/device structure is a reason to hold out complete users during validation, rather than randomly splitting rows.
+
+The typical training fingerprint detects a small subset of the 520 available WAPs: the mean is 17.88 and median is 17 detected APs per scan. The official test mean and median are 15.59 and 15. Mean observed RSSI is $-78.59$ dBm in training and $-77.45$ dBm in the official test. These shifts are descriptive and were not used for fitting, model selection, or hyperparameter tuning. RSSI histograms also expose a small number of near-zero observed values, which were flagged for audit instead of being removed without source evidence.
+
+\begin{figure*}[t]
+\centering
+\begin{minipage}[t]{0.48\textwidth}\centering
+\includegraphics[width=\linewidth]{eda_access_point_signal.png}\\[-1mm]
+{\footnotesize (a) Detected AP counts and observed training RSSI}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\textwidth}\centering
+\includegraphics[width=\linewidth]{eda_building_floor_balance.png}\\[-1mm]
+{\footnotesize (b) Training scan support by building and floor}
+\end{minipage}\\[2mm]
+\begin{minipage}[t]{0.48\textwidth}\centering
+\includegraphics[width=\linewidth]{eda_user_phone_counts.png}\\[-1mm]
+{\footnotesize (c) Scan counts by user and phone}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.48\textwidth}\centering
+\includegraphics[width=\linewidth]{eda_coordinate_maps.png}\\[-1mm]
+{\footnotesize (d) Coordinate distributions by building and floor}
+\end{minipage}
+\caption{Exploratory analysis of signal coverage, label support, acquisition entities, and coordinate structure.}
+\label{fig:eda}
+\end{figure*}
 
 \begin{table}[t]
-\caption{Training data quality checks}
+\caption{Training data quality and signal-shift checks}
 \label{tab:quality}
 \centering
 \footnotesize
-\begin{tabular}{lr}
+\begin{tabular}{p{0.48\columnwidth}p{0.38\columnwidth}}
 \toprule
-Check & Result \\
+Check & Result or action \\
 \midrule
-Exact duplicate training scans removed & 637 \\
-WAPs constant in cleaned training data & 55 \\
-Scans remaining for grouped CV & 19,300 \\
-Unusual observed RSSI in $[-5,0]$ dBm & 224 \\
-Official held-out scans & 1,111 \\
-USERID overlap in each outer fold & 0 \\
+Exact duplicate training scans & 637 removed; first copy retained \\
+Training-constant WAP columns & 55 of 520; detected on training only and dropped from both splits \\
+Cleaned training scans & 19,300 \\
+Observed RSSI in $[-5,0]$ dBm & 224 values, associated with USERIDs 6 and 14; flagged and retained \\
+Detected APs per scan & Train: mean 17.88, median 17; test: mean 15.59, median 15 \\
+Mean observed RSSI & Train: $-78.59$ dBm; test: $-77.45$ dBm \\
+Official held-out scans & 1,111; kept separate from grouped cross-validation \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The 224 unusually strong values were flagged and retained rather than silently changed. Constant WAP columns were identified from training data and removed from both partitions. The five saved GroupKFold splits have no USERID overlap, and each cleaned training scan is used for validation once. The official data also has fewer detected APs per scan on average than training; this shift is descriptive and was not used for tuning (Fig.~\ref{fig:shift}).
+The 637 exact duplicate rows were removed from training, leaving 19,300 scans. We found 55 WAP columns constant in cleaned training data and removed those columns from both partitions based only on the training data. We flagged 224 observed RSSI cells in $[-5,0]$ dBm, associated with USERIDs 6 and 14, but retained them because the evidence did not establish that they were invalid. Five deterministic outer GroupKFold splits were created by USERID. They have zero USERID overlap between each fold's training and validation subsets, and every cleaned training scan appears in exactly one held-out fold. The official 1,111-row file remains outside this development loop.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\columnwidth]{eda_train_test_shift.png}
-\caption{Train and official-test RSSI and detected-AP shift. The test data is descriptive only for Phase 1 model selection.}
+\caption{Train and official-test distributions for detected AP count and mean observed RSSI. The official test is descriptive only for Phase 1 model selection.}
 \label{fig:shift}
 \end{figure}
 
 \section{Features and Models}
 \subsection{RSSI representation}
-The raw dataset uses +100 to encode a WAP that was not detected. This value is not a physical RSSI, so the pipeline maps absence to $-110$ dBm, below the observed signal range, and preserves detection information where the representation includes missingness indicators. Candidate views include linear-positive, exponential, and powered RSSI transforms. Engineered features summarize detected AP count, strongest readings, and missingness pattern. PCA and variance filtering are evaluated using parameters fit on training folds only. These choices follow common fingerprinting practice while keeping non-detection distinct from a weak observed signal \cite{xia2017,shang2022}.
+The raw dataset uses +100 to encode a WAP that was not detected. This is not a physical RSSI; the pipeline maps absence to $-110$ dBm and carries a binary absence indicator so a missing AP remains distinguishable from a weak observed AP. It compares three signal views: linear-positive $x=(r+110)/110$, exponential $x=\exp(r/24)$, and a power view based on the normalized positive signal raised to $e$. Here, $r$ is the observed RSSI in dBm and missing entries map to zero in each view. Per-scan summary features include detected-AP count, strongest RSSI and its AP index, mean and standard deviation of observed signals, and top-three AP information. After 55 constant WAPs are removed, 465 signal values, 465 absence flags, and 11 summary features produce the 941-feature classifier input. The representations are compared on the same USERID-grouped folds; the linear-positive kNN baseline has 20.26 m mean position error, close to the other two views. PCA and variance selection are fitted inside each training fold, then applied unchanged to its validation fold \cite{xia2017,shang2022}. In the first fold, PCA retained 56.8\%, 71.3\%, and 87.1\% of feature variance with 50, 100, and 200 components, respectively; a zero-variance filter reduced 941 inputs to 811 in that fold.
 
 \subsection{Classification}
 Random Forest and XGBoost predict BUILDINGID and FLOOR. Their nonlinear tree ensembles can model interactions among access-point readings. Nested tuning selects parameters on inner USERID-grouped splits; outer held-out users produce out-of-fold predictions. Macro-F1 is considered alongside accuracy because floor support is imbalanced. The best task-wise route combines the tuned RF building classifier with tuned XGBoost floor classifier.
