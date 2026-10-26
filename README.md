@@ -1,68 +1,151 @@
-# Indoor Wi-Fi Localization (Project 9)
+# Indoor Wi-Fi Localization
 
-Phase 1 foundation for building, floor, and coordinate prediction from the UCI UJIIndoorLoc Wi-Fi fingerprints. Raw data is downloaded locally and is excluded from Git.
+An offline machine-learning project that predicts a scan's building, floor, and indoor coordinates from Wi-Fi access-point signal fingerprints. Phase 1 establishes the classical ML baseline on UJIIndoorLoc. Phase 2 will test deep-learning and hybrid approaches against the same user-held-out baseline.
 
-## Phase 1 work order and owners
+Phase 1 uses saved dataset files. It does not perform live Wi-Fi scanning, connect to a database service, or provide a deployed mobile application.
 
-1. **Member 1 — Data and infrastructure lead:** repository setup, UCI download, schema validation, training duplicate and constant-WAP cleanup, suspicious near-zero RSSI audit, USERID GroupKFold splits, official test-set designation, and the EDA notebook/data-quality report.
-2. **Member 2 — Features and representation lead:** shared `+100` to `-110 dBm` convention, three RSSI representations, engineered/missingness features, fold-only scaling/PCA/variance filtering, and grouped-CV kNN comparison.
-3. **Member 3 — Classification lead** consumes the cleaned splits/features for building and floor models; **Member 4 — Regression and validation lead** consumes them for coordinate models. Member 2's feature importance work is integrated with Member 3's tree models.
+## Project status
 
-The guide uses Member 1–5 role labels. Use the agreed team roster to confirm each person’s member-number mapping before presenting or submitting.
+- **Phase 1:** implementation and evaluation artifacts are available: data-quality and EDA results, feature engineering, grouped-CV classifiers and regressors, result tables, figures, and an IEEE-style report.
+- **Phase 2:** planned work is described below. Its models and results must be reported only after they have been implemented and evaluated; planned improvements are not results.
 
-## Setup and data
+## Dataset
+
+The project uses the UJIIndoorLoc dataset from the [UCI Machine Learning Repository](https://doi.org/10.24432/C5MS59), licensed under CC BY 4.0. The source files contain 21,048 scans in total:
+
+| File | Scans | Use |
+|---|---:|---|
+| `trainingData.csv` | 19,937 | Development, grouped cross-validation, and model fitting. |
+| `validationData.csv` | 1,111 | Official held-out file. Earlier fixed-setting Phase 1 predictions exist; see the evaluation note below. |
+
+Each source row has 529 columns: 520 WAP signal readings, four targets (`BUILDINGID`, `FLOOR`, `LONGITUDE`, `LATITUDE`), and five metadata fields (`SPACEID`, `RELATIVEPOSITION`, `USERID`, `PHONEID`, `TIMESTAMP`). The labels cover three buildings and 13 building-floor combinations. The two CSV files occupy about 43 MB.
+
+Raw data is downloaded locally and excluded from Git. To download it, use the setup steps below. The loader removes exact duplicate rows from training only, identifies constant WAP columns using training only, and drops those columns from both partitions. It flags observed RSSI values in `[-5, 0]` dBm for review but retains them. The current recorded quality checks found 637 duplicate rows, 55 constant WAP columns, and 224 flagged near-zero readings. The cleaned training set has 19,300 rows.
+
+## Setup
+
+Use Python 3.11 and the pinned dependencies in `requirements.txt`.
 
 ```bash
-python -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python scripts/download_data.py
 python scripts/build_splits.py
 python scripts/export_quality_report.py
 ```
 
-The loader removes duplicate training rows only, detects constant WAP columns from training only and drops those columns from both splits, and flags observed readings from -5 to 0 dBm with their USERIDs. It does not modify or deduplicate the official `validationData.csv` held-out test set. Splits are five deterministic `GroupKFold` folds grouped by `USERID`; indices refer to the cleaned training frame.
+The download script saves the source CSVs under `data/raw/`. `build_splits.py` creates five deterministic `GroupKFold` splits grouped by `USERID`. Rows for a user stay together, and every cleaned training row appears in one outer validation fold. The 1,111-row official file is not used to fit the folds.
 
-## Phase 1 artifacts
+## Phase 1 workflow
 
-- `notebooks/01_eda.ipynb`: data quality, class balance, detected AP counts, observed RSSI, USERID/PHONEID counts, coordinate maps, and train-vs-test shift.
-- `notebooks/02_features.ipynb`: feature conventions, representations, engineered features, scaling/PCA and grouped kNN comparison.
-- `src/data/load.py`: common loaders and cleaning.
-- `src/features/transform.py`: fold-safe feature building.
-- `data/splits/folds.json`: reproducible fold indices and quality metadata; raw data itself is ignored.
-- `results/tables/`: data-quality, grouped kNN representation, PCA variance, and variance-filter outputs produced by the report scripts.
-- `docs/theory_phase1.md`, `docs/data_quality.md`: methodology notes and data-quality summary.
+The pipeline follows this order:
 
-Run `python scripts/run_knn_baselines.py` for the five-fold representation comparison and `python scripts/report_feature_reduction.py` for PCA/variance-filter reports. Both operate on USERID-held-out training folds; neither uses the official test set. The baseline metrics are in `results/tables/knn_representation_summary.csv`, with per-fold metrics alongside it. `results/tables/pca_explained_variance.csv` reports fold-0 cumulative explained variance, and `variance_threshold_counts.csv` reports zero-variance selection. Member 2's fold-fitted selector is used in Member 3's RF/XGBoost comparisons; see the Member 3 results section below.
+1. **Explore and audit the data.** EDA examines signal coverage and RSSI, building and floor support, scan counts by user and phone, coordinate maps, and train-versus-official-file signal summaries. It covers signal data and relevant labels and metadata; it is not an exhaustive analysis of every metadata field.
+2. **Clean and split.** Remove duplicate training rows, drop training-constant WAPs from both partitions, retain flagged near-zero readings, and make USERID-grouped folds.
+3. **Build fold-safe features.** The source uses `+100` to mean “not detected.” The feature pipeline maps it to `-110` dBm for numeric signal views and adds missingness indicators. It compares linear-positive, exponential, and power-based RSSI views, plus per-scan signal summaries. Scaling, PCA, and variance filtering are fitted on the training part of each fold and then applied to that fold's held-out users.
+4. **Classify and localize.** M3 compares Random Forest and XGBoost for building/floor labels. M4 compares kNN, Random Forest, and XGBoost for coordinates with global, per-building, and per-building-floor routing. M4 uses out-of-fold M3 predictions for realistic end-to-end routing; oracle routing with true labels is a diagnostic only.
+5. **Evaluate consistently.** M5 combines saved predictions and applies shared classification, coordinate, hierarchical, and EvAAL-style metrics. Pooled out-of-fold results are kept distinct from the earlier official-file baseline.
 
-## Source
+The feature pipeline used by the Phase 1 classifiers has 941 inputs: 465 transformed WAP values, 465 WAP absence indicators, and 11 scan-level summary features. The pipeline and data loader are in `src/features/transform.py` and `src/data/load.py`.
 
-UJIIndoorLoc, UCI Machine Learning Repository, DOI [10.24432/C5MS59](https://doi.org/10.24432/C5MS59), CC BY 4.0. Follow the dataset license and cite UCI in the report.
+## Phase 1 results
 
-## Member 3 — Phase 1 classifier work
+The headline figures below are pooled out-of-fold results from five USERID-grouped folds. The task-best classification figures come from different classifier choices, so the model name belongs with each result.
 
-Random Forest and XGBoost building/floor classifiers use the shared feature builder and USERID-grouped folds. `src/models/ml/classifiers.py` contains the estimator definitions. The fixed-setting comparison is reproduced with `python scripts/train_classifiers.py`; corrected nested USERID tuning is reproduced with `python scripts/train_tuned_classifiers.py`. Both fit features within the relevant training folds and write fold summaries and OOF predictions. The checked-in classifier summary, class-support, confusion, and selected-parameter tables are under `results/tables/`. To regenerate tuned confusion figures after running the tuner, use `python scripts/plot_classifier_confusion_matrices.py --predictions results/preds/classifiers_tuned_grouped_cv.csv --output-prefix results/figures/classifier_tuned`. Interpret XGBoost gain and Random Forest impurity importance within their own model families, not as directly comparable magnitudes.
+| Task | Result | Evaluation details |
+|---|---:|---|
+| Building classification | 99.34% accuracy | Task-best result with Random Forest. |
+| Floor classification | 77.10% accuracy | Task-best result with XGBoost. Floor performance is uneven; the least-supported floor remains difficult. |
+| Coordinate prediction | 12.21 m mean position error | Tuned per-building kNN using the predicted building; median 7.52 m and 95th-percentile error 37.11 m. |
 
-## Member 4 — Phase 1 coordinate regression and validation
+Other useful context: the training scans contain a mean of 17.88 detected APs per scan versus 15.59 in the official file. The tuned per-building kNN result improves on the global kNN route (about 21.01 m mean error). The per-building-floor route did not improve on per-building routing in the primary comparison.
 
-`src/models/ml/regressors.py` defines coordinate scalers, regressors, routing, and position metrics. `scripts/train_regressors.py` compares kNN, Random Forest, and XGBoost with global, per-building, and per-building-floor routing. For the tuned primary route, first generate the M3 nested OOF predictions, then run:
+### Official-file evaluation note
+
+The official 1,111-row file was evaluated earlier with fixed model settings. Those saved predictions are not a fresh evaluation of the corrected tuned pipeline and must not be presented as tuned-model test results or used to choose tuned models. Use the nested USERID-grouped cross-validation results for Phase 1 model comparisons. Preserve this limitation in presentations and reports. For Phase 2, select models using grouped validation and disclose that the official file has already been evaluated by the earlier baseline; do not repeatedly inspect it during tuning.
+
+## Reproducing Phase 1 experiments
+
+After setup and split generation, the main commands are:
 
 ```bash
+# M2: grouped kNN comparison of RSSI representations and feature reduction
+python scripts/run_knn_baselines.py
+python scripts/report_feature_reduction.py
+
+# M3: fixed comparison, then nested USERID-grouped tuning
+python scripts/train_classifiers.py
 python scripts/train_tuned_classifiers.py
-python scripts/train_regressors.py --upstream-predictions classifiers_tuned_grouped_cv.csv --upstream-features tuned_variance_filtered --output-suffix tuned
-```
 
-The second command fits its feature transforms and coordinate-target scalers inside the relevant training splits and evaluates end-to-end routes using M3 OOF predictions. Oracle routing with true labels is diagnostic only. Grouped-CV summaries, fold metrics, and selected settings are in `results/tables/`; row-level predictions are generated locally under `results/preds/`. Existing official-test outputs are from the earlier fixed-setting run; do not rerun the official test or use those saved results to select a tuned model. `scripts/plot_regression_results.py` regenerates regression figures from the corresponding saved prediction CSV.
+# M4: tuned end-to-end coordinate routes using M3's tuned OOF predictions
+python scripts/train_regressors.py \
+  --upstream-predictions classifiers_tuned_grouped_cv.csv \
+  --upstream-features tuned_variance_filtered \
+  --output-suffix tuned
 
-## Member 5 — Phase 1 evaluation and report integration
-
-Run the shared evaluator and comparison-table generator after model scripts have produced local prediction CSVs:
-
-```bash
+# M5: rebuild summary tables after the prediction CSVs have been generated
 python scripts/build_results_table.py
+
+# Run project tests
+pytest
 ```
 
-It reads prediction CSVs in `results/preds/`, writes pooled grouped-CV and official-test metrics to `results/tables/phase1_comparison.csv`, and preserves fold-level rows in `results/tables/phase1_results_by_fold.csv`. Row-level predictions are not required to review the committed summary tables and are generated locally when models are rerun. Metrics include building/floor accuracy, conditional floor accuracy, coordinate MAE and error quantiles, hierarchical breakdown, and the guide's EvAAL-style score. Unit tests are in `tests/test_evaluation_metrics.py`.
+Model scripts create row-level predictions locally under `results/preds/`. Summary and fold-level tables are stored under `results/tables/`. Do not run `scripts/evaluate_official_test.py` or otherwise evaluate the official file during model selection.
 
-The evaluator preserves the saved official-test outputs and does not rerun them after tuning. The saved test results therefore represent the earlier fixed-setting baseline; use grouped-CV results to compare tuned models.
+## Phase 1 ownership
 
+| Member | Phase 1 responsibility | Main handoff |
+|---|---|---|
+| M1 | Data setup, quality checks, EDA, and USERID-grouped folds. | Cleaned data and fold definitions. |
+| M2 | Missing-signal handling, RSSI representations, engineered features, fold-safe transforms, and kNN feature baselines. | Shared feature builder and feature comparison. |
+| M3 | Building/floor classification with Random Forest and XGBoost. | Out-of-fold building/floor predictions for M4 and M5. |
+| M4 | Coordinate regression, routing, and end-to-end localization evaluation. | Coordinate predictions, route comparisons, and error analysis. |
+| M5 | Shared metrics, result integration, and report-ready analysis. | Pooled and fold-level comparison tables. |
+
+Use the team's agreed roster to map people to M1-M5 in the final contribution statement; the repository role labels alone do not establish who completed each task.
+
+## Phase 2 plan
+
+Phase 2 will test whether learned Wi-Fi representations and joint or hybrid models improve on the Phase 1 classical baseline. Every experiment must reuse the same cleaned data convention and USERID-grouped folds. Tune on grouped training folds, compare models on identical held-out users, and report negative and neutral findings as well as gains.
+
+| Member | Planned work | Evidence and output |
+|---|---|---|
+| M1 — data and robustness | Build a PyTorch `Dataset`/`DataLoader` that uses the Phase 1 feature convention. Test training-only RSSI noise augmentation at standard deviations of 2 and 4 dBm and AP dropout at 5% and 10%. Compare dropout, weight decay, batch normalization, and early stopping. | Reusable data pipeline; train/validation loss curves; robustness and regularization comparisons on grouped folds. |
+| M2 — hybrid method | Use the learned multitask representation as an embedding, then test kNN restricted by predicted building/floor. Compare against the multitask MLP, hierarchical MLP plus XGBoost, and stacking. | A hybrid comparison with a clear reasoned metric. Claim an improvement only if it is supported by held-out-user results. |
+| M3 — multitask model | Implement a shared MLP trunk with building, floor, and coordinate heads. Compare shared versus single-task models, loss weights, and a hierarchical floor head. | Model architecture, loss definitions, ablations, per-task metrics, and pooled OOF predictions. |
+| M4 — tuning and statistical validation | Tune within grouped training folds; evaluate final candidates across three seeds. Add paired bootstrap confidence intervals (1,000 resamples), a McNemar test for floor-classification comparisons, per-user summaries, a 25/50/75/100% learning curve, floor calibration/ECE, and worst-error review. | Reproducible tuning record, uncertainty and significance analysis, calibration, learning curves, and documented failure cases. |
+| M5 — ablations and integration | Coordinate A1-A9 controlled ablations, changing one factor at a time and using three seeds. Integrate all members' methods/results, limitations, and citations into the final report. | Ablation table with mean and standard deviation, complete report and comparison figures, and a record of neutral or negative results. |
+
+### Phase 2 evaluation rules
+
+- Keep PyTorch as the deep-learning framework and reuse Phase 1's preprocessing rules and saved folds.
+- Fit every scaler, feature transform, feature selector, and target scaler only on the training partition for that fold.
+- Use grouped validation for architecture and hyperparameter selection. Freeze the model before any final evaluation on the official file.
+- The official file has already been evaluated for the Phase 1 fixed-setting baseline. Report that history and avoid treating it as a completely untouched test set for Phase 2.
+- Compare models on the same folds, seeds, targets, and metrics. Report all planned ablations, including results that do not improve on Phase 1.
+
+Phase 2 deliverables are a trained multitask baseline, a tested hybrid candidate, robustness and ablation results, statistical validation, updated report and figures, and a reproducible evaluation/demo workflow. These are planned deliverables until the experiments have actually run.
+
+## Repository layout
+
+```text
+configs/                 Phase 1 feature, classifier, and regressor settings
+data/raw/                Downloaded UJIIndoorLoc CSVs (ignored by Git)
+data/splits/folds.json   Saved USERID-grouped split indices
+notebooks/               EDA, feature, classification, and regression notebooks
+src/data/                Data loading and quality checks
+src/features/            RSSI and fold-safe feature transformations
+src/models/ml/           Phase 1 classifier and regressor definitions
+src/evaluation/          Shared evaluation metrics
+scripts/                 Data, split, model, plotting, and evaluation commands
+results/figures/         EDA, model, and routing plots
+results/tables/          Quality, grouped-CV, classifier, and regressor summaries
+main.tex                 IEEE-style Phase 1 report source
+main.pdf                 Compiled Phase 1 report
+```
+
+## Data source
+
+UJIIndoorLoc, UCI Machine Learning Repository, DOI [10.24432/C5MS59](https://doi.org/10.24432/C5MS59). Cite the dataset and follow its CC BY 4.0 license terms in submitted work.
