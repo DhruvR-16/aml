@@ -1,0 +1,11 @@
+model,feature_set,target,fold,accuracy,macro_f1,n_features,train_rows,validation_rows,selected_n_estimators,selected_max_depth,selected_learning_rate
+xgboost,tuned_variance_filtered,building,0,0.9931355181576617,0.9904196748901382,811,14784,4516,250,6,0.05
+xgboost,tuned_variance_filtered,floor,0,0.9306908768821966,0.9328995910731688,811,14784,4516,200,6,0.1
+xgboost,tuned_variance_filtered,building,1,0.9889349930843707,0.967422566479454,874,15685,3615,250,6,0.05
+xgboost,tuned_variance_filtered,floor,1,0.8769017980636238,0.873546591675074,874,15685,3615,150,4,0.05
+xgboost,tuned_variance_filtered,building,2,0.9969613259668508,0.6622543749889854,890,15680,3620,200,6,0.1
+xgboost,tuned_variance_filtered,floor,2,0.8430939226519337,0.7979879964767719,890,15680,3620,200,6,0.1
+xgboost,tuned_variance_filtered,building,3,0.8681902737177783,0.5823512729680189,897,15537,3763,200,6,0.1
+xgboost,tuned_variance_filtered,floor,3,0.46771193196917354,0.3656617489164389,897,15537,3763,250,6,0.05
+xgboost,tuned_variance_filtered,building,4,0.9928684627575277,0.6621042737422058,871,15514,3786,250,6,0.05
+xgboost,tuned_variance_filtered,floor,4,0.7120972002113048,0.7446170209667521,871,15514,3786,200,6,0.1

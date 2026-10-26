@@ -1,0 +1,11 @@
+model,feature_set,target,fold,accuracy,macro_f1,n_features,train_rows,validation_rows,selected_n_estimators,selected_max_features,selected_min_samples_leaf
+random_forest,tuned_variance_filtered,building,0,0.9991142604074402,0.9984791094156996,811,14784,4516,300,sqrt,2
+random_forest,tuned_variance_filtered,floor,0,0.9149689991142604,0.9203461733166316,811,14784,4516,300,0.2,1
+random_forest,tuned_variance_filtered,building,1,0.991701244813278,0.9742071856848417,874,15685,3615,300,sqrt,2
+random_forest,tuned_variance_filtered,floor,1,0.8719225449515906,0.8687787418758716,874,15685,3615,300,0.2,1
+random_forest,tuned_variance_filtered,building,2,0.9983425414364641,0.6643669408511229,890,15680,3620,300,sqrt,2
+random_forest,tuned_variance_filtered,floor,2,0.8071823204419889,0.7017352781834185,890,15680,3620,200,sqrt,1
+random_forest,tuned_variance_filtered,building,3,0.9957480733457348,0.995742914095785,897,15537,3763,200,sqrt,1
+random_forest,tuned_variance_filtered,floor,3,0.46744618655328196,0.3675493966116091,897,15537,3763,300,0.2,1
+random_forest,tuned_variance_filtered,building,4,0.9809825673534073,0.9799068582573738,871,15514,3786,200,sqrt,1
+random_forest,tuned_variance_filtered,floor,4,0.6502905441098785,0.7015237796989956,871,15514,3786,300,sqrt,2

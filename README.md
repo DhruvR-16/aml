@@ -8,7 +8,7 @@ Phase 1 foundation for building, floor, and coordinate prediction from the UCI U
 2. **Member 2 — Features and representation lead:** shared `+100` to `-110 dBm` convention, three RSSI representations, engineered/missingness features, fold-only scaling/PCA/variance filtering, and grouped-CV kNN comparison.
 3. **Member 3 — Classification lead** consumes the cleaned splits/features for building and floor models; **Member 4 — Regression and validation lead** consumes them for coordinate models. Member 2's feature importance work is integrated with Member 3's tree models.
 
-The guide gives roles as Member 1–5 and asks the team to replace them with names. No team roster was supplied, so these are the exact role labels used here; assign people to those labels before presenting or submitting.
+The guide uses Member 1–5 role labels. Use the agreed team roster to confirm each person’s member-number mapping before presenting or submitting.
 
 ## Setup and data
 
@@ -41,37 +41,28 @@ UJIIndoorLoc, UCI Machine Learning Repository, DOI [10.24432/C5MS59](https://doi
 
 ## Member 3 — Phase 1 classifier work
 
-Random Forest and XGBoost building/floor classifiers use the same five USERID folds and Member 2's linear-positive feature representation. Both full (941 features) and fold-fitted zero-variance-filtered variants were evaluated. The script writes fold metrics, grouped-CV summary, paired predictions, feature-importance table, and plot:
-
-```bash
-python scripts/train_classifiers.py
-python scripts/summarize_classifier_effects.py
-```
-
-Fixed-setting baseline results are in `results/tables/classifier_grouped_cv_summary.csv`. Nested USERID tuning, selected parameters, and OOF predictions are in `results/tables/classifier_tuned_grouped_cv_summary.csv`, `results/tables/classifier_tuned_selected_hyperparameters.json`, and `results/preds/classifiers_tuned_grouped_cv.csv`. Generate tuned OOF confusion matrices with `python scripts/plot_classifier_confusion_matrices.py --predictions results/preds/classifiers_tuned_grouped_cv.csv --output-prefix results/figures/classifier_tuned`. XGBoost gain and Random Forest impurity importance are model-specific and should not be compared by absolute scale.
+Random Forest and XGBoost building/floor classifiers use the shared feature builder and USERID-grouped folds. `src/models/ml/classifiers.py` contains the estimator definitions. The fixed-setting comparison is reproduced with `python scripts/train_classifiers.py`; corrected nested USERID tuning is reproduced with `python scripts/train_tuned_classifiers.py`. Both fit features within the relevant training folds and write fold summaries and OOF predictions. The checked-in classifier summary, class-support, confusion, and selected-parameter tables are under `results/tables/`. To regenerate tuned confusion figures after running the tuner, use `python scripts/plot_classifier_confusion_matrices.py --predictions results/preds/classifiers_tuned_grouped_cv.csv --output-prefix results/figures/classifier_tuned`. Interpret XGBoost gain and Random Forest impurity importance within their own model families, not as directly comparable magnitudes.
 
 ## Member 4 — Phase 1 coordinate regression and validation
 
-Member 4 trains and evaluates coordinate regressors (kNN, Random Forest, XGBoost) to predict `LONGITUDE` and `LATITUDE` in metres. All targets are standardized using training statistics only and inverted back to metres before metric computation. Evaluates global, per-building, and per-building-floor routing under both oracle diagnostics and realistic end-to-end routing (consuming Member 3's building/floor predictions):
+`src/models/ml/regressors.py` defines coordinate scalers, regressors, routing, and position metrics. `scripts/train_regressors.py` compares kNN, Random Forest, and XGBoost with global, per-building, and per-building-floor routing. For the tuned primary route, first generate the M3 nested OOF predictions, then run:
 
 ```bash
-python scripts/train_regressors.py
-python scripts/plot_regression_results.py
+python scripts/train_tuned_classifiers.py
+python scripts/train_regressors.py --upstream-predictions classifiers_tuned_grouped_cv.csv --upstream-features tuned_variance_filtered --output-suffix tuned
 ```
 
-Results: `results/tables/regressor_grouped_cv_summary.csv`, `regressor_grouped_cv_folds.csv`, `regressor_test_summary.csv`, `results/figures/coordinate_error_cdf.png`, and `results/figures/coordinate_error_maps.png`. Theory and routing bias–variance analysis are in `docs/theory_regression.md`. Interactive notebook and demo are in `notebooks/04_ml_regression.ipynb`.
-
-The corrected M4 grouped-CV run fits preprocessing inside each inner split and consumes tuned M3 RF OOF routes. Those outputs have the `_tuned` suffix. Official-test predictions and figures remain from the earlier fixed-setting run; they were not rerun after tuning and must not be used to select a model.
+The second command fits its feature transforms and coordinate-target scalers inside the relevant training splits and evaluates end-to-end routes using M3 OOF predictions. Oracle routing with true labels is diagnostic only. Grouped-CV summaries, fold metrics, and selected settings are in `results/tables/`; row-level predictions are generated locally under `results/preds/`. Existing official-test outputs are from the earlier fixed-setting run; do not rerun the official test or use those saved results to select a tuned model. `scripts/plot_regression_results.py` regenerates regression figures from the corresponding saved prediction CSV.
 
 ## Member 5 — Phase 1 evaluation and report integration
 
-Run the shared evaluator and comparison-table generator:
+Run the shared evaluator and comparison-table generator after model scripts have produced local prediction CSVs:
 
 ```bash
 python scripts/build_results_table.py
 ```
 
-It reads every CSV in `results/preds/`, writes pooled grouped-CV and official-test metrics to `results/tables/phase1_comparison.csv`, and preserves fold-level rows in `results/tables/phase1_results_by_fold.csv`. Metrics include building/floor accuracy, conditional floor accuracy, coordinate MAE and error quantiles, hierarchical breakdown, and the guide's EvAAL-style score. Unit tests are in `tests/test_evaluation_metrics.py`.
+It reads prediction CSVs in `results/preds/`, writes pooled grouped-CV and official-test metrics to `results/tables/phase1_comparison.csv`, and preserves fold-level rows in `results/tables/phase1_results_by_fold.csv`. Row-level predictions are not required to review the committed summary tables and are generated locally when models are rerun. Metrics include building/floor accuracy, conditional floor accuracy, coordinate MAE and error quantiles, hierarchical breakdown, and the guide's EvAAL-style score. Unit tests are in `tests/test_evaluation_metrics.py`.
 
 The evaluator preserves the saved official-test outputs and does not rerun them after tuning. The saved test results therefore represent the earlier fixed-setting baseline; use grouped-CV results to compare tuned models.
 
